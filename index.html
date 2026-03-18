@@ -1,1 +1,203 @@
-ゲーム
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Simple Breakout Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #2c3e50;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            touch-action: none; /* スマホのスクロールを防止 */
+        }
+        canvas {
+            background-color: #000;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+            border-radius: 8px;
+            max-width: 100%;
+            max-height: 90vh;
+        }
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            color: white;
+            font-size: 20px;
+            pointer-events: none;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-layer">Score: <span id="score">0</span></div>
+<canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    const scoreElement = document.getElementById("score");
+
+    // ゲームの設定
+    let canvasWidth = window.innerWidth > 480 ? 400 : window.innerWidth - 20;
+    let canvasHeight = 600;
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+
+    let score = 0;
+    let gameRunning = true;
+
+    // ボールの設定
+    let ballRadius = 8;
+    let x = canvas.width / 2;
+    let y = canvas.height - 30;
+    let dx = 3;
+    let dy = -3;
+
+    // パドルの設定
+    let paddleHeight = 12;
+    let paddleWidth = 80;
+    let paddleX = (canvas.width - paddleWidth) / 2;
+
+    // ブロックの設定
+    const brickRowCount = 8;
+    const brickColumnCount = 5;
+    const brickPadding = 5;
+    const brickOffsetTop = 50;
+    const brickOffsetLeft = 10;
+    const brickWidth = (canvas.width - (brickOffsetLeft * 2) - (brickPadding * (brickColumnCount - 1))) / brickColumnCount;
+    const brickHeight = 20;
+
+    const bricks = [];
+    for (let c = 0; c < brickColumnCount; c++) {
+        bricks[c] = [];
+        for (let r = 0; r < brickRowCount; r++) {
+            bricks[c][r] = { x: 0, y: 0, status: 1, color: `hsl(${r * 40}, 70%, 60%)` };
+        }
+    }
+
+    // マウス/タッチ操作
+    document.addEventListener("mousemove", mouseMoveHandler, false);
+    document.addEventListener("touchmove", touchMoveHandler, { passive: false });
+
+    function mouseMoveHandler(e) {
+        const relativeX = e.clientX - canvas.offsetLeft;
+        if (relativeX > 0 && relativeX < canvas.width) {
+            paddleX = relativeX - paddleWidth / 2;
+        }
+    }
+
+    function touchMoveHandler(e) {
+        e.preventDefault();
+        const touch = e.touches[0];
+        const relativeX = touch.clientX - canvas.offsetLeft;
+        if (relativeX > 0 && relativeX < canvas.width) {
+            paddleX = relativeX - paddleWidth / 2;
+        }
+    }
+
+    // 衝突判定
+    function collisionDetection() {
+        for (let c = 0; c < brickColumnCount; c++) {
+            for (let r = 0; r < brickRowCount; r++) {
+                const b = bricks[c][r];
+                if (b.status === 1) {
+                    if (x > b.x && x < b.x + brickWidth && y > b.y && y < b.y + brickHeight) {
+                        dy = -dy;
+                        b.status = 0;
+                        score++;
+                        scoreElement.textContent = score;
+                        if (score === brickRowCount * brickColumnCount) {
+                            alert("おめでとう！クリアです！");
+                            document.location.reload();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    function drawBall() {
+        ctx.beginPath();
+        ctx.arc(x, y, ballRadius, 0, Math.PI * 2);
+        ctx.fillStyle = "#fff";
+        ctx.fill();
+        ctx.closePath();
+    }
+
+    function drawPaddle() {
+        ctx.beginPath();
+        ctx.rect(paddleX, canvas.height - paddleHeight - 10, paddleWidth, paddleHeight);
+        ctx.fillStyle = "#0095DD";
+        ctx.fill();
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = "#0095DD";
+        ctx.closePath();
+        ctx.shadowBlur = 0; // 他に影響させない
+    }
+
+    function drawBricks() {
+        for (let c = 0; c < brickColumnCount; c++) {
+            for (let r = 0; r < brickRowCount; r++) {
+                if (bricks[c][r].status === 1) {
+                    const brickX = c * (brickWidth + brickPadding) + brickOffsetLeft;
+                    const brickY = r * (brickHeight + brickPadding) + brickOffsetTop;
+                    bricks[c][r].x = brickX;
+                    bricks[c][r].y = brickY;
+                    ctx.beginPath();
+                    ctx.rect(brickX, brickY, brickWidth, brickHeight);
+                    ctx.fillStyle = bricks[c][r].color;
+                    ctx.fill();
+                    ctx.closePath();
+                }
+            }
+        }
+    }
+
+    function draw() {
+        if (!gameRunning) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        drawBricks();
+        drawBall();
+        drawPaddle();
+        collisionDetection();
+
+        // 壁との衝突
+        if (x + dx > canvas.width - ballRadius || x + dx < ballRadius) {
+            dx = -dx;
+        }
+        if (y + dy < ballRadius) {
+            dy = -dy;
+        } else if (y + dy > canvas.height - ballRadius - 10) {
+            // パドルとの衝突
+            if (x > paddleX && x < paddleX + paddleWidth) {
+                // 当たる位置によって跳ね返る角度を変える
+                let collidePoint = x - (paddleX + paddleWidth / 2);
+                collidePoint = collidePoint / (paddleWidth / 2);
+                let angle = collidePoint * (Math.PI / 3); // 最大60度
+
+                dx = 5 * Math.sin(angle);
+                dy = -5 * Math.cos(angle);
+            } else if (y + dy > canvas.height) {
+                gameRunning = false;
+                alert("ゲームオーバー！ Score: " + score);
+                document.location.reload();
+            }
+        }
+
+        x += dx;
+        y += dy;
+        requestAnimationFrame(draw);
+    }
+
+    draw();
+</script>
+
+</body>
+</html>
