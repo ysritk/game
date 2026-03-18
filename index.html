@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Simple Breakout Game</title>
+    <title>Power-up Breakout Game</title>
     <style>
         body {
             margin: 0;
@@ -54,11 +54,15 @@
     let gameRunning = true;
 
     // ボールの設定
-    let ballRadius = 8;
-    let x = canvas.width / 2;
-    let y = canvas.height - 30;
-    let dx = 3;
-    let dy = -3;
+    const initialBallRadius = 8;
+    const initialBallSpeed = 3; // ボールの初期速度
+    let balls = [{
+        x: canvas.width / 2,
+        y: canvas.height - 30,
+        dx: initialBallSpeed,
+        dy: -initialBallSpeed,
+        radius: initialBallRadius
+    }];
 
     // パドルの設定
     let paddleHeight = 12;
@@ -78,9 +82,14 @@
     for (let c = 0; c < brickColumnCount; c++) {
         bricks[c] = [];
         for (let r = 0; r < brickRowCount; r++) {
-            bricks[c][r] = { x: 0, y: 0, status: 1, color: `hsl(${r * 40}, 70%, 60%)` };
+            // 特定のブロックにパワーアップフラグを設定
+            const isPowerUpBlock = (r === 2 && c === Math.floor(brickColumnCount / 2)) || (r === 5 && c === Math.floor(brickColumnCount / 3));
+            bricks[c][r] = { x: 0, y: 0, status: 1, color: `hsl(${r * 40}, 70%, 60%)`, powerUp: isPowerUpBlock ? 'multiBall' : null };
         }
     }
+
+    // パワーアップアイテムの設定
+    let powerUps = []; // 落ちてくるパワーアップアイテムを格納
 
     // マウス/タッチ操作
     document.addEventListener("mousemove", mouseMoveHandler, false);
@@ -102,20 +111,43 @@
         }
     }
 
+    // ボール増殖処理
+    function activateMultiBall(ballX, ballY, ballDx, ballDy) {
+        // 現在のボールを元に2つの新しいボールを作成
+        const newBall1 = { x: ballX, y: ballY, dx: -ballDx, dy: -ballDy, radius: initialBallRadius };
+        const newBall2 = { x: ballX, y: ballY, dx: ballDx, dy: -ballDy, radius: initialBallRadius };
+        balls.push(newBall1, newBall2);
+    }
+
     // 衝突判定
     function collisionDetection() {
         for (let c = 0; c < brickColumnCount; c++) {
             for (let r = 0; r < brickRowCount; r++) {
                 const b = bricks[c][r];
                 if (b.status === 1) {
-                    if (x > b.x && x < b.x + brickWidth && y > b.y && y < b.y + brickHeight) {
-                        dy = -dy;
-                        b.status = 0;
-                        score++;
-                        scoreElement.textContent = score;
-                        if (score === brickRowCount * brickColumnCount) {
-                            alert("おめでとう！クリアです！");
-                            document.location.reload();
+                    for (let i = 0; i < balls.length; i++) {
+                        const ball = balls[i];
+                        if (ball.x > b.x && ball.x < b.x + brickWidth && ball.y > b.y && ball.y < b.y + brickHeight) {
+                            ball.dy = -ball.dy;
+                            b.status = 0;
+                            score++;
+                            scoreElement.textContent = score;
+
+                            // パワーアップブロックだった場合、アイテムを生成
+                            if (b.powerUp === 'multiBall') {
+                                powerUps.push({
+                                    x: b.x + brickWidth / 2,
+                                    y: b.y + brickHeight / 2,
+                                    dy: 2, // 落ちる速度
+                                    type: 'multiBall',
+                                    radius: 10
+                                });
+                            }
+
+                            if (score === brickRowCount * brickColumnCount) {
+                                alert("おめでとう！クリアです！");
+                                document.location.reload();
+                            }
                         }
                     }
                 }
@@ -123,9 +155,9 @@
         }
     }
 
-    function drawBall() {
+    function drawBall(ball) {
         ctx.beginPath();
-        ctx.arc(x, y, ballRadius, 0, Math.PI * 2);
+        ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
         ctx.fillStyle = "#fff";
         ctx.fill();
         ctx.closePath();
@@ -153,9 +185,51 @@
                     ctx.beginPath();
                     ctx.rect(brickX, brickY, brickWidth, brickHeight);
                     ctx.fillStyle = bricks[c][r].color;
+                    if (bricks[c][r].powerUp) { // パワーアップブロックは色を変える
+                        ctx.fillStyle = "#FFD700"; // 金色
+                    }
                     ctx.fill();
                     ctx.closePath();
                 }
+            }
+        }
+    }
+
+    function drawPowerUps() {
+        for (let i = 0; i < powerUps.length; i++) {
+            const pu = powerUps[i];
+            ctx.beginPath();
+            ctx.arc(pu.x, pu.y, pu.radius, 0, Math.PI * 2);
+            ctx.fillStyle = "#00FF00"; // 緑色
+            ctx.fill();
+            ctx.closePath();
+        }
+    }
+
+    function updatePowerUps() {
+        for (let i = powerUps.length - 1; i >= 0; i--) {
+            const pu = powerUps[i];
+            pu.y += pu.dy;
+
+            // パドルとの衝突判定
+            if (pu.y + pu.radius > canvas.height - paddleHeight - 10 &&
+                pu.y - pu.radius < canvas.height - 10 &&
+                pu.x > paddleX &&
+                pu.x < paddleX + paddleWidth) {
+                // パワーアップ発動
+                if (pu.type === 'multiBall') {
+                    // 現在のボールを全て増殖させる
+                    const currentBalls = [...balls];
+                    for(let j = 0; j < currentBalls.length; j++) {
+                        activateMultiBall(currentBalls[j].x, currentBalls[j].y, currentBalls[j].dx, currentBalls[j].dy);
+                    }
+                }
+                powerUps.splice(i, 1); // アイテムを削除
+            }
+
+            // 画面外に出たアイテムを削除
+            if (pu.y - pu.radius > canvas.height) {
+                powerUps.splice(i, 1);
             }
         }
     }
@@ -164,35 +238,46 @@
         if (!gameRunning) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         drawBricks();
-        drawBall();
         drawPaddle();
-        collisionDetection();
+        drawPowerUps(); // パワーアップアイテムを描画
 
-        // 壁との衝突
-        if (x + dx > canvas.width - ballRadius || x + dx < ballRadius) {
-            dx = -dx;
-        }
-        if (y + dy < ballRadius) {
-            dy = -dy;
-        } else if (y + dy > canvas.height - ballRadius - 10) {
-            // パドルとの衝突
-            if (x > paddleX && x < paddleX + paddleWidth) {
-                // 当たる位置によって跳ね返る角度を変える
-                let collidePoint = x - (paddleX + paddleWidth / 2);
-                collidePoint = collidePoint / (paddleWidth / 2);
-                let angle = collidePoint * (Math.PI / 3); // 最大60度
+        // 各ボールの描画と更新
+        for (let i = balls.length - 1; i >= 0; i--) {
+            const ball = balls[i];
+            drawBall(ball);
+            collisionDetection(); // 各ボールで衝突判定
 
-                dx = 5 * Math.sin(angle);
-                dy = -5 * Math.cos(angle);
-            } else if (y + dy > canvas.height) {
-                gameRunning = false;
-                alert("ゲームオーバー！ Score: " + score);
-                document.location.reload();
+            // 壁との衝突
+            if (ball.x + ball.dx > canvas.width - ball.radius || ball.x + ball.dx < ball.radius) {
+                ball.dx = -ball.dx;
             }
+            if (ball.y + ball.dy < ball.radius) {
+                ball.dy = -ball.dy;
+            } else if (ball.y + ball.dy > canvas.height - ball.radius - 10) {
+                // パドルとの衝突
+                if (ball.x > paddleX && ball.x < paddleX + paddleWidth) {
+                    let collidePoint = ball.x - (paddleX + paddleWidth / 2);
+                    collidePoint = collidePoint / (paddleWidth / 2);
+                    let angle = collidePoint * (Math.PI / 3);
+
+                    ball.dx = 5 * Math.sin(angle);
+                    ball.dy = -5 * Math.cos(angle);
+                } else if (ball.y + ball.dy > canvas.height) {
+                    // ボールが画面下部に落ちた
+                    balls.splice(i, 1); // ボールを削除
+                    if (balls.length === 0) { // 全てのボールがなくなったらゲームオーバー
+                        gameRunning = false;
+                        alert("ゲームオーバー！ Score: " + score);
+                        document.location.reload();
+                    }
+                }
+            }
+
+            ball.x += ball.dx;
+            ball.y += ball.dy;
         }
 
-        x += dx;
-        y += dy;
+        updatePowerUps(); // パワーアップアイテムを更新
         requestAnimationFrame(draw);
     }
 
